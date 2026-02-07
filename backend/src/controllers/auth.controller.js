@@ -27,11 +27,14 @@ const newUser= new User({
 fullname,
 email,
 password: hashedPassword
-})
+});
 
 if(newUser){
-generateToken(newUser._id, res)
-await newUser.save()
+//generateToken(newUser._id, res)
+//await newUser.save()
+
+const savedUser = awaitUser.save();
+generateToken(savedUser._id, res);
 res.status(201).json({
     _id:newUser._id,
     fullname:newUser.fullname,
