@@ -15,4 +15,4 @@ export const sendWelcomeEmail = async (email, name, clientURL) => {
     }
 
     console.log("Welcome Email sent successfully", data);
-};
+}; 
