@@ -40,6 +40,17 @@ try {
     const {id:receiverId} =req.params;
     const senderId= req.user._id;
 
+    if (!text && !image){
+        return res.status(400).json({message:"text or image is required."});
+    }
+    if (senderId.equals(receiverId)){
+        return res.status(400).json({message:"Cannot send messages to yourself"});
+    }
+    const receiverExists = await User.exists({_id: receiverId});
+    if (!receiverExists){
+        return res.status(404).json({ message: "Receiver not found"});
+    }
+
     let imageUrl;
     if(image){
         const uploadResponse = await cloudinary.uploader.upload(image);
