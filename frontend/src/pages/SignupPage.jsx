@@ -6,7 +6,7 @@ import { Link } from "react-router";
 
 function SignupPage() {
   const [formData, setFormData]= useState({fullname:"", email:"", password:""});
-  const {signup, isSignUp}= useAuthStore()
+  const {signup, isSigningUp}= useAuthStore()
 
   const handleSubmit= (e)=>{
     e.preventDefault();

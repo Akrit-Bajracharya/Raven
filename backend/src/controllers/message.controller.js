@@ -1,5 +1,6 @@
 import Message from "../models/Message.js";
 import User from "../models/User.js";
+import cloudinary from "../lib/cloudinary.js";
 
 export const getAllContacts= async (req,res)=>{
     try {
@@ -14,25 +15,29 @@ export const getAllContacts= async (req,res)=>{
     }
 };
 
-export const getMessagesByUserId= async(req,res)=>{
-    try {
-        const myId=req.user._id;
-        const {id:usertoChatId}=req.params
+export const getMessagesByUserId = async (req, res) => {
+  try {
+    const myId = req.user._id;
+    const { id: userToChatId } = req.params;
 
-        const message= await Message.find({
-            $or:[
-                {senderId:myId, receiverId:userToChatId},
-                {senderId:userToChatId,receiverId:myId},
-            ],
-        });
-
-        res.status(200).json(messages);
-    } catch (error) {
-        console.log("Error in getMessages controller:",error.message);
-        res.status(500).json({error:"Internal server error"});
-        
+    if (!userToChatId) {
+      return res.status(400).json({ error: "userToChatId is required" });
     }
+
+    const messages = await Message.find({
+      $or: [
+        { senderId: myId, receiverId: userToChatId },
+        { senderId: userToChatId, receiverId: myId },
+      ],
+    });
+
+    res.status(200).json(messages);
+  } catch (error) {
+    console.log("Error in getMessages controller:", error.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
 };
+
 
 export const sendMessage= async(req,res)=>{
 try {

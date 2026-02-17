@@ -115,4 +115,4 @@ const handleSubmit=(e)=>{
 }
 
 
-export default LoginPage
+export default LoginPage;
