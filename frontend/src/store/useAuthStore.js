@@ -36,7 +36,7 @@ set({isSigningUp:false})
 },
 
 login: async(data) =>{
-set({isSigningUp: true})
+set({isLoggingIn: true})
 try {
     const res = await axiosInstance.post("/auth/login",data);
     set({ authUser: res.data});
@@ -58,6 +58,22 @@ logout: async()=>{
         toast.error("logout error:",error);
         
     }
-}
+},
 
-}));
+updateProfile: async (data) => {
+  try {
+    const res = await axiosInstance.put(
+      "/auth/update-profile",
+      data
+      // Remove the headers config completely
+    );
+
+    set({ authUser: res.data });
+    toast.success("Profile updated successfully");
+  } catch (error) {
+    console.log("Error in update profile", error);
+    toast.error(error?.response?.data?.message || "Profile update failed");
+    throw error;
+  }
+}
+}))
