@@ -77,8 +77,8 @@ function SignupPage() {
                   </div>
                 </div>
 
-                <button className="auth-btn" type="submit" disabled={isSignUp}>
-                {isSignUp ? (
+                <button className="auth-btn" type="submit" disabled={isSigningUp}>
+                {isSigningUp ? (
                   <LoaderIcon className="w-full h-5 animate-spin text-center" />
                 ) : (
                   "Create Account"
