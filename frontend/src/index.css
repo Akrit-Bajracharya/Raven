@@ -33,3 +33,429 @@
   @apply px-4 py-2 inline-block bg-cyan-500/10 rounded-lg text-cyan-400
   hover:text-cyan-500 text-sm transition-colors;
 }
+
+/* ============================================================
+   THEME SYSTEM — paste into your index.css (or import separately)
+   ============================================================ */
+
+/* Default CSS variable fallbacks (overridden by JS on load) */
+/* ============================================================
+   THEME SYSTEM — paste into your index.css (or import separately)
+   ============================================================ */
+
+/* Default CSS variable fallbacks (overridden by JS on load) */
+:root {
+  --bg-base:        #0f0f1a;
+  --bg-surface:     #1a1a2e;
+  --bg-elevated:    #16213e;
+  --bg-input:       #0d0d1f;
+  --border:         #2a2a4a;
+  --text-primary:   #e8e8ff;
+  --text-secondary: #8888bb;
+  --text-muted:     #555577;
+  --accent:         #7c6af7;
+  --accent-hover:   #6a58e5;
+  --accent-subtle:  #1e1a3f;
+  --bubble-out:     #7c6af7;
+  --bubble-out-text:#ffffff;
+  --bubble-in:      #1e1e35;
+  --bubble-in-text: #e8e8ff;
+  --online:         #22d3a5;
+  --scrollbar:      #2a2a4a;
+
+  /* Derived / structural */
+  --radius-sm:  6px;
+  --radius-md:  12px;
+  --radius-lg:  18px;
+  --transition: 0.18s ease;
+}
+
+/* Apply theme variables globally to your existing app elements */
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  transition: background-color var(--transition), color var(--transition);
+}
+
+/* ── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar            { width: 6px; }
+::-webkit-scrollbar-track      { background: transparent; }
+::-webkit-scrollbar-thumb      { background: var(--scrollbar); border-radius: 99px; }
+::-webkit-scrollbar-thumb:hover{ background: var(--accent); }
+
+/* ============================================================
+   THEME SWITCHER COMPONENT STYLES
+   ============================================================ */
+
+.theme-switcher-wrapper {
+  position: relative;
+  z-index: 100;
+  width: 100%;
+}
+
+/* ── Trigger button (full-width) ───────────────────────────────── */
+.theme-trigger-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 7px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.theme-trigger-btn:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.theme-trigger-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.theme-trigger-dots {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.theme-trigger-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: block;
+}
+
+.theme-trigger-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-trigger-chevron {
+  flex-shrink: 0;
+  transition: transform var(--transition);
+}
+
+/* ── Panel ─────────────────────────────────────────────────────── */
+.theme-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  width: auto;
+  min-width: 100%;
+  max-height: 420px;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  animation: theme-panel-in 0.18s ease;
+}
+
+@keyframes theme-panel-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* ── Panel header ──────────────────────────────────────────────── */
+.theme-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.theme-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+
+.theme-panel-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.theme-panel-close:hover {
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+
+/* ── Category filter ───────────────────────────────────────────── */
+.theme-categories {
+  display: flex;
+  gap: 4px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.theme-categories::-webkit-scrollbar { display: none; }
+
+.theme-cat-btn {
+  padding: 4px 10px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.theme-cat-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.theme-cat-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bubble-out-text);
+}
+
+/* ── Theme grid ────────────────────────────────────────────────── */
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.theme-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 6px 7px;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--border);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+
+.theme-card:hover {
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.theme-card.active {
+  border-color: var(--accent);
+  background: var(--accent-subtle);
+}
+
+/* ── Color preview swatches ────────────────────────────────────── */
+.theme-preview {
+  display: flex;
+  width: 100%;
+  height: 28px;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.theme-swatch {
+  flex: 1;
+  display: block;
+}
+
+/* ── Card label ────────────────────────────────────────────────── */
+.theme-card-name {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  text-align: center;
+  line-height: 1.2;
+}
+
+.theme-card.active .theme-card-name {
+  color: var(--accent);
+}
+
+/* ── Active check ──────────────────────────────────────────────── */
+.theme-card-check {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--bubble-out-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Footer count ──────────────────────────────────────────────── */
+.theme-count {
+  flex-shrink: 0;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+  padding: 6px 0 10px;
+  border-top: 1px solid var(--border);
+  margin: 0;
+}
+
+/* ============================================================
+   MAP YOUR EXISTING CLASS NAMES TO THEME VARIABLES
+   Add/adjust these to match your actual component class names.
+   ============================================================ */
+
+/* Sidebar / layout */
+.sidebar,
+.chats-list,
+.contact-list {
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+/* Profile header */
+.profile-header {
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+/* Chat container */
+.chat-container,
+.chat-area {
+  background: var(--bg-base);
+}
+
+/* Chat header */
+.chat-header {
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+/* Message bubbles */
+.message-out .bubble,
+.message-sent .bubble {
+  background: var(--bubble-out);
+  color: var(--bubble-out-text);
+  border-radius: var(--radius-lg) var(--radius-lg) 4px var(--radius-lg);
+}
+
+.message-in .bubble,
+.message-received .bubble {
+  background: var(--bubble-in);
+  color: var(--bubble-in-text);
+  border-radius: var(--radius-lg) var(--radius-lg) var(--radius-lg) 4px;
+}
+
+/* Input */
+.message-input,
+.message-input input,
+.message-input textarea {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+}
+
+.message-input input::placeholder,
+.message-input textarea::placeholder {
+  color: var(--text-muted);
+}
+
+/* Buttons / accent */
+.btn-primary,
+.send-btn {
+  background: var(--accent);
+  color: var(--bubble-out-text);
+  border: none;
+  transition: background var(--transition);
+}
+
+.btn-primary:hover,
+.send-btn:hover {
+  background: var(--accent-hover);
+}
+
+/* Online indicator */
+.online-dot {
+  background: var(--online);
+}
+
+/* Secondary text */
+.text-secondary,
+.timestamp,
+.last-message-preview {
+  color: var(--text-secondary);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+/* Hover rows in lists */
+.chat-list-item:hover,
+.contact-item:hover {
+  background: var(--accent-subtle);
+}
+
+.chat-list-item.active,
+.contact-item.active {
+  background: var(--accent-subtle);
+  border-left: 3px solid var(--accent);
+}
+
+/* Search inputs */
+.search-input {
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+/* Skeleton loaders */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--border) 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s infinite;
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
