@@ -1,55 +1,121 @@
 import { useEffect, useState } from "react";
-import { useChatStore } from "../store/useChatStore";
-import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
 import { useAuthStore } from "../store/useAuthStore";
+import { axiosInstance } from "../lib/axios";
+import UsersLoadingSkeleton from "./UsersLoadingSkeleton";
+import toast from "react-hot-toast";
+import { CheckIcon, XIcon } from "lucide-react";
 
-function ContactCard({ contact, onlineUsers, onClick }) {
+function PendingCard({ request, onAccept, onReject }) {
   const [hovered, setHovered] = useState(false);
+
   return (
     <div
-      className="p-4 rounded-lg cursor-pointer transition-colors"
+      className="p-4 rounded-lg transition-colors"
       style={{
         backgroundColor: hovered ? "var(--bg-elevated)" : "transparent",
         border: "1px solid var(--border)",
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={onClick}
     >
       <div className="flex items-center gap-3">
-        <div className={`avatar ${onlineUsers?.includes(contact._id.toString()) ? "online" : "offline"}`}>
+        <div className="avatar shrink-0">
           <div className="size-12 rounded-full">
-            <img src={contact.profilePic || "/avatar.png"} alt={contact.fullname} />
+            <img
+              src={request.sender.profilePic || "/avatar.png"}
+              alt={request.sender.fullname}
+              className="object-cover w-full h-full rounded-full"
+            />
           </div>
         </div>
-        <h4 className="font-medium" style={{ color: "var(--text-primary)" }}>
-          {contact.fullname}
-        </h4>
+        <div className="flex-1 min-w-0">
+          <h4 className="font-medium truncate" style={{ color: "var(--text-primary)" }}>
+            {request.sender.fullname}
+          </h4>
+          <p className="text-xs" style={{ color: "var(--text-secondary)" }}>
+            Wants to connect
+          </p>
+        </div>
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={() => onAccept(request._id)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+            style={{ backgroundColor: "var(--accent)", color: "var(--bubble-out-text)" }}
+          >
+            <CheckIcon className="w-3 h-3" /> Accept
+          </button>
+          <button
+            onClick={() => onReject(request._id)}
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+            style={{ backgroundColor: "var(--bg-elevated)", color: "var(--text-secondary)", border: "1px solid var(--border)" }}
+          >
+            <XIcon className="w-3 h-3" /> Reject
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
 function ContactList() {
-  const { getAllContacts, allContacts, setSelectedUser, isUsersLoading } = useChatStore();
-  const { onlineUsers } = useAuthStore();
+  const [pendingRequests, setPendingRequests] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchPending = async () => {
+    try {
+      const res = await axiosInstance.get("/friends/pending");
+      setPendingRequests(res.data);
+    } catch (error) {
+      toast.error("Failed to load requests");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    getAllContacts();
-  }, [getAllContacts]);
+    fetchPending();
+  }, []);
 
-  if (isUsersLoading) return <UsersLoadingSkeleton />;
+  const handleAccept = async (requestId) => {
+    try {
+      await axiosInstance.post(`/friends/accept/${requestId}`);
+      toast.success("Friend request accepted!");
+      fetchPending();
+    } catch (error) {
+      toast.error("Failed to accept request");
+    }
+  };
+
+  const handleReject = async (requestId) => {
+    try {
+      await axiosInstance.post(`/friends/reject/${requestId}`);
+      toast.success("Request rejected");
+      fetchPending();
+    } catch (error) {
+      toast.error("Failed to reject request");
+    }
+  };
+
+  if (loading) return <UsersLoadingSkeleton />;
 
   return (
     <div className="space-y-2">
-      {allContacts.map((contact) => (
-        <ContactCard
-          key={contact._id}
-          contact={contact}
-          onlineUsers={onlineUsers}
-          onClick={() => setSelectedUser(contact)}
-        />
-      ))}
+      {pendingRequests.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 text-center"
+          style={{ color: "var(--text-secondary)" }}>
+          <p className="text-sm font-medium">No pending requests</p>
+          <p className="text-xs mt-1 opacity-60">When someone adds you, they'll appear here.</p>
+        </div>
+      ) : (
+        pendingRequests.map((req) => (
+          <PendingCard
+            key={req._id}
+            request={req}
+            onAccept={handleAccept}
+            onReject={handleReject}
+          />
+        ))
+      )}
     </div>
   );
 }

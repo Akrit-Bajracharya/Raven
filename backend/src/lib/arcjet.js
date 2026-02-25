@@ -2,6 +2,8 @@ import arcjet, { shield, detectBot, slidingWindow } from "@arcjet/node";
 
 import { ENV } from "./env.js";
 
+const isDevelopment = ENV.ARCJET_ENV === "development";
+
 const aj = arcjet({
   
   key: ENV.ARCJET_KEY,
@@ -10,7 +12,7 @@ const aj = arcjet({
     shield({ mode: "LIVE" }),
     // Create a bot detection rule
     detectBot({
-      mode: "LIVE", // Blocks requests. Use "DRY_RUN" to log only
+      mode: isDevelopment ? "DRY_RUN" : "LIVE", // Blocks requests. Use "DRY_RUN" to log only
       // Block all bots except the following
       allow: [
         "CATEGORY:SEARCH_ENGINE", // Google, Bing, etc

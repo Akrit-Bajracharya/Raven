@@ -7,11 +7,11 @@ import { useEffect } from "react";
 import PageLoader from "./components/PageLoader"
 import { Toaster } from "react-hot-toast";
 import useThemeStore from "./store/useThemeStore";
+import OnboardingPage from "./pages/OnboardingPage";
 
 function App() {
   const { authUser, checkAuth, isCheckingAuth } = useAuthStore();
   
-  // Just importing this initializes the theme on mount
   useThemeStore();
 
   useEffect(() => {
@@ -28,7 +28,7 @@ function App() {
       {/* Background grid */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px]" />
 
-      {/* Glow blobs — now use theme accent color */}
+      {/* Glow blobs */}
       <div
         className="absolute top-0 -left-4 size-96 opacity-20 blur-[100px]"
         style={{ backgroundColor: "var(--accent)" }}
@@ -39,9 +39,45 @@ function App() {
       />
 
       <Routes>
-        <Route path="/" element={authUser ? <ChatPage /> : <Navigate to={"/login"} />} />
-        <Route path="/login" element={!authUser ? <LoginPage /> : <Navigate to={"/"} />} />
-        <Route path="/signup" element={!authUser ? <SignupPage /> : <Navigate to={"/"} />} />
+        {/* HOME — checks onboarded */}
+        <Route
+          path="/"
+          element={
+            !authUser ? (
+              <Navigate to="/login" />
+            ) : !authUser.onboarded ? (
+              <Navigate to="/onboarding" />
+            ) : (
+              <ChatPage />
+            )
+          }
+        />
+
+        {/* ONBOARDING */}
+        <Route
+          path="/onboarding"
+          element={
+            !authUser ? (
+              <Navigate to="/login" />
+            ) : authUser.onboarded ? (
+              <Navigate to="/" />
+            ) : (
+              <OnboardingPage />
+            )
+          }
+        />
+
+        {/* LOGIN */}
+        <Route
+          path="/login"
+          element={!authUser ? <LoginPage /> : <Navigate to="/" />}
+        />
+
+        {/* SIGNUP */}
+        <Route
+          path="/signup"
+          element={!authUser ? <SignupPage /> : <Navigate to="/" />}
+        />
       </Routes>
 
       <Toaster />

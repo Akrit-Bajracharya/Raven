@@ -45,6 +45,7 @@ res.status(201).json({
     fullname:newUser.fullname,
     email:newUser.email,
     profilePic:newUser.profilePic,
+     onboarded: newUser.onboarded,
 
 });
 
@@ -85,6 +86,7 @@ export const login = async (req,res)=>{
                 fullname: user.fullname,
                 email: user.email,
                 profilePic: user.profilePic,
+                  onboarded: user.onboarded,
              });
     } catch (error) {
         console.error("Error in login controller:",error);

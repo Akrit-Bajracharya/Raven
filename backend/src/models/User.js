@@ -20,6 +20,24 @@ const userSchema= new mongoose.Schema({
         type: String,
         default: ""
     },
+
+    interests: {
+        type: [String],
+        default: []
+    },
+    interestVector: {
+        type: [Number],
+        default: []
+    },
+    onboarded: {
+        type: Boolean,
+        default:false
+    },
+    friends: {
+    type: [mongoose.Schema.Types.ObjectId],
+    ref: "User",
+    default: []
+},
 },
 {
     timestamps: true,
