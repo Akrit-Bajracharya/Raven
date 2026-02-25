@@ -13,6 +13,6 @@ export const connectDB = async () => {
         console.log("MONGO CONNECTED:", conn.connection.host);
     } catch (error) {
         console.error("Error connecting to MongoDB:", error);
-        process.exit(1);
+        process.exit(1);     
     }
 };
