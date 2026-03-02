@@ -32,6 +32,11 @@ io.on("connection", (socket)=>{
       //to send event to all connected clien
     io.emit("getOnlineUsers",Object.keys(userSocketMap));
 
+       // ✅ add this
+    socket.on("joinGroups", (groupIds) => {
+        groupIds.forEach((id) => socket.join(id));
+    });
+
     socket.on("disconnect", ()=>{
         console.log("A user disconnected",socket.user.fullname);
         delete userSocketMap[userId];
