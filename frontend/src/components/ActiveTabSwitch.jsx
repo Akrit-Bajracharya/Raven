@@ -7,6 +7,7 @@ function ActiveTabSwitch() {
     { id: "chats", label: "Chats" },
     { id: "contacts", label: "Contacts" },
     { id: "discover", label: "Discover" },
+    { id: "groups", label: "Groups" },  // ✅ just add this line
   ];
 
   return (

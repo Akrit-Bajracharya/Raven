@@ -4,7 +4,7 @@ import useKeyboardSound from "../hooks/useKeyboardSound";
 import { useChatStore } from "../store/useChatStore";
 import { ImageIcon, SendIcon, XIcon } from "lucide-react";
 
-function MessageInput() {
+function MessageInput({ onSend }) {
   const { playRandomKeyStrokeSound } = useKeyboardSound();
   const [text, setText] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
@@ -17,7 +17,9 @@ function MessageInput() {
     if (!text.trim() && !imagePreview) return;
     if (isSoundEnabled) playRandomKeyStrokeSound();
 
-    sendMessage({ text: text.trim(), image: imagePreview });
+    const sender = onSend || sendMessage;
+    sender({ text: text.trim(), image: imagePreview });
+
     setText("");
     setImagePreview(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -44,7 +46,6 @@ function MessageInput() {
       className="p-4"
       style={{ borderTop: "1px solid var(--border)" }}
     >
-      {/* Image preview */}
       {imagePreview && (
         <div className="max-w-3xl mx-auto mb-3 flex items-center">
           <div className="relative">
@@ -74,7 +75,6 @@ function MessageInput() {
         onSubmit={handleSendMessage}
         className="max-w-3xl mx-auto flex space-x-4"
       >
-        {/* Text input */}
         <input
           type="text"
           value={text}
@@ -91,7 +91,6 @@ function MessageInput() {
           placeholder="Type your message..."
         />
 
-        {/* Hidden file input */}
         <input
           type="file"
           accept="image/*"
@@ -100,7 +99,6 @@ function MessageInput() {
           className="hidden"
         />
 
-        {/* Image button */}
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
@@ -114,7 +112,6 @@ function MessageInput() {
           <ImageIcon className="w-5 h-5" />
         </button>
 
-        {/* Send button */}
         <button
           type="submit"
           disabled={!text.trim() && !imagePreview}
