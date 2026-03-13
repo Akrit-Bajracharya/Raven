@@ -3,6 +3,7 @@ import {axiosInstance} from "../lib/axios"
 import toast from "react-hot-toast";
 import { io } from "socket.io-client";
 import { useGroupStore } from "./useGroupStore";
+import encryption from "../lib/encryption"; // 👈 added
 
 const BASE_URL = import.meta.env.MODE === "development" ? "http://localhost:3000": "/";
 
@@ -18,6 +19,8 @@ export const useAuthStore = create((set, get) => ({
     try {
       const res = await axiosInstance.get("/auth/check");
       set({ authUser: res.data });
+      // 👇 added: if user has no key stored locally, regenerate and save
+      await get().initEncryption();
       get().connectSocket();
     } catch (error) {
       console.log("Error in authCheck:", error);
@@ -33,6 +36,8 @@ export const useAuthStore = create((set, get) => ({
       const res = await axiosInstance.post("/auth/signup", data);
       set({ authUser: res.data });
       toast.success("Account created successfully!");
+      // 👇 added: generate keys for new user
+      await get().initEncryption();
       get().connectSocket();
     } catch (error) {
       toast.error(error.response.data.message);
@@ -47,6 +52,8 @@ export const useAuthStore = create((set, get) => ({
       const res = await axiosInstance.post("/auth/login", data);
       set({ authUser: res.data });
       toast.success("Logged in successfully!");
+      // 👇 added: generate/restore keys on login
+      await get().initEncryption();
       get().connectSocket();
     } catch (error) {
       toast.error(error.response.data.message);
@@ -75,6 +82,23 @@ export const useAuthStore = create((set, get) => ({
       console.log("Error in update profile", error);
       toast.error(error?.response?.data?.message || "Profile update failed");
       throw error;
+    }
+  },
+
+  // 👇 added: generates keys if none exist, then saves public key to server
+  initEncryption: async () => {
+    try {
+      const existingKey = await encryption.loadPrivateKey();
+
+      if (!existingKey) {
+        // First time on this device — generate a fresh key pair
+        const { publicKeyBase64 } = await encryption.generateKeyPair();
+        await axiosInstance.post("/auth/save-public-key", { publicKey: publicKeyBase64 });
+      }
+      // If key already exists in IndexedDB, nothing to do —
+      // the public key is already on the server from a previous session
+    } catch (error) {
+      console.error("Encryption init failed:", error);
     }
   },
 
@@ -112,4 +136,4 @@ export const useAuthStore = create((set, get) => ({
       socket.disconnect();
     }
   },
-})); 
+}));

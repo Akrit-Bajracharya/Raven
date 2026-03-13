@@ -34,14 +34,19 @@ const userSchema= new mongoose.Schema({
         default:false
     },
     friends: {
-    type: [mongoose.Schema.Types.ObjectId],
-    ref: "User",
-    default: []
-},
+        type: [mongoose.Schema.Types.ObjectId],
+        ref: "User",
+        default: []
+    },
+
+    // 👇 added: stores the user's public key for E2EE
+    publicKey: {
+        type: String,
+        default: ""
+    },
 },
 {
     timestamps: true,
-
 }
 );
 

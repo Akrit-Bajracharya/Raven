@@ -1,13 +1,17 @@
 import { useEffect, useRef } from "react";
 import { useGroupStore } from "../store/useGroupStore";
 import { useAuthStore } from "../store/useAuthStore";
-import MessageInput from "./MessageInput"; // reuse existing
+import { useCallStore } from "../store/useCallStore";
+import { useWebRTC } from "../store/useWebRTC";
+import MessageInput from "./MessageInput";
 import MessagesLoadingSkeleton from "./MessagesLoadingSkeleton";
-import { Users } from "lucide-react";
+import { Users, Video, Phone } from "lucide-react";
 
 export default function GroupChatContainer() {
   const { selectedGroup, groupMessages, fetchGroupMessages, isLoadingMessages, sendGroupMessage } = useGroupStore();
   const { authUser } = useAuthStore();
+  const { callStatus } = useCallStore();
+  const { startCall } = useWebRTC();
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -22,18 +26,66 @@ export default function GroupChatContainer() {
     await sendGroupMessage(selectedGroup._id, messageData);
   };
 
+  const handleCall = (callType) => {
+    if (callStatus) return;
+    startCall({
+      callType,
+      isGroup: true,
+      groupId: selectedGroup._id,
+      groupName: selectedGroup.name,
+      callerInfo: {
+        fullname: authUser.fullname,
+        profilePic: authUser.profilePic,
+      },
+    });
+  };
+
   if (!selectedGroup) return null;
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="flex items-center gap-3 p-4 border-b border-base-300">
-        <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
-          <Users size={18} className="text-primary-content" />
+      <div
+        className="flex items-center justify-between p-4"
+        style={{
+          backgroundColor: "var(--bg-surface)",
+          borderBottom: "1px solid var(--border)",
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
+            <Users size={18} className="text-primary-content" />
+          </div>
+          <div>
+            <p className="font-semibold">{selectedGroup.name}</p>
+            <p className="text-xs opacity-50">{selectedGroup.members.length} members</p>
+          </div>
         </div>
-        <div>
-          <p className="font-semibold">{selectedGroup.name}</p>
-          <p className="text-xs opacity-50">{selectedGroup.members.length} members</p>
+
+        {/* Call buttons */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => handleCall("audio")}
+            disabled={!!callStatus}
+            title="Group voice call"
+            className="p-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ color: "var(--text-muted)" }}
+            onMouseEnter={e => e.currentTarget.style.color = "var(--text-primary)"}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--text-muted)"}
+          >
+            <Phone size={18} />
+          </button>
+          <button
+            onClick={() => handleCall("video")}
+            disabled={!!callStatus}
+            title="Group video call"
+            className="p-2 rounded-lg transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            style={{ color: "var(--text-muted)" }}
+            onMouseEnter={e => e.currentTarget.style.color = "var(--text-primary)"}
+            onMouseLeave={e => e.currentTarget.style.color = "var(--text-muted)"}
+          >
+            <Video size={18} />
+          </button>
         </div>
       </div>
 
@@ -66,7 +118,6 @@ export default function GroupChatContainer() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Input — reuse your existing MessageInput */}
       <MessageInput onSend={handleSend} />
     </div>
   );
