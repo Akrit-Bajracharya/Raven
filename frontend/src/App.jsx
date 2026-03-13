@@ -8,15 +8,59 @@ import PageLoader from "./components/PageLoader"
 import { Toaster } from "react-hot-toast";
 import useThemeStore from "./store/useThemeStore";
 import OnboardingPage from "./pages/OnboardingPage";
+import CallModal from "./components/CallModal";
+import IncomingCallModal from "./components/IncomingCallModal";
+import { useCallStore } from "./store/useCallStore";
+import { useWebRTC } from "./store/useWebRTC";
 
 function App() {
   const { authUser, checkAuth, isCheckingAuth } = useAuthStore();
-  
+  const { handleAnswer, handleIceCandidate } = useWebRTC();
+
   useThemeStore();
 
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
+
+  useEffect(() => {
+    const socket = useAuthStore.getState().socket;
+    if (!authUser || !socket) return;
+
+    socket.on("call:incoming", (data) => {
+      useCallStore.getState().setIncomingCall(data);
+    });
+
+    socket.on("call:accepted", async ({ answer }) => {
+      await handleAnswer(answer);
+      useCallStore.getState().setCallStatus("connected");
+    });
+
+    socket.on("call:rejected", () => {
+      useCallStore.getState().resetCall();
+    });
+
+    socket.on("call:ended", () => {
+      useCallStore.getState().resetCall();
+    });
+
+    socket.on("call:ice-candidate", async ({ candidate }) => {
+      await handleIceCandidate(candidate);
+    });
+
+    socket.on("call:camera-toggle", ({ isCameraOff }) => {
+      useCallStore.getState().setRemoteCameraOff(isCameraOff);
+    });
+
+    return () => {
+      socket.off("call:incoming");
+      socket.off("call:accepted");
+      socket.off("call:rejected");
+      socket.off("call:ended");
+      socket.off("call:ice-candidate");
+      socket.off("call:camera-toggle");
+    };
+  }, [authUser]);
 
   if (isCheckingAuth) return <PageLoader />
 
@@ -39,7 +83,6 @@ function App() {
       />
 
       <Routes>
-        {/* HOME — checks onboarded */}
         <Route
           path="/"
           element={
@@ -53,7 +96,6 @@ function App() {
           }
         />
 
-        {/* ONBOARDING */}
         <Route
           path="/onboarding"
           element={
@@ -67,18 +109,20 @@ function App() {
           }
         />
 
-        {/* LOGIN */}
         <Route
           path="/login"
           element={!authUser ? <LoginPage /> : <Navigate to="/" />}
         />
 
-        {/* SIGNUP */}
         <Route
           path="/signup"
           element={!authUser ? <SignupPage /> : <Navigate to="/" />}
         />
       </Routes>
+
+      {/* Global call modals — render on top of everything */}
+      <CallModal />
+      <IncomingCallModal />
 
       <Toaster />
     </div>

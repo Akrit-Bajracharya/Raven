@@ -34,27 +34,22 @@ password: hashedPassword
 });
 
 if(newUser){
-//generateToken(newUser._id, res)
-//await newUser.save()
+    const savedUser = await newUser.save();
+    generateToken(savedUser._id, res);
 
-const savedUser = await newUser.save();
-generateToken(savedUser._id, res);
+    res.status(201).json({
+        _id:newUser._id,
+        fullname:newUser.fullname,
+        email:newUser.email,
+        profilePic:newUser.profilePic,
+        onboarded: newUser.onboarded,
+    });
 
-res.status(201).json({
-    _id:newUser._id,
-    fullname:newUser.fullname,
-    email:newUser.email,
-    profilePic:newUser.profilePic,
-     onboarded: newUser.onboarded,
-
-});
-
-try {
-    await sendWelcomeEmail(savedUser.email,savedUser.fullname, ENV.CLIENT_URL);
-} catch (error) {
-    console.error("Failed to send welcome emails",error);
-}
-
+    try {
+        await sendWelcomeEmail(savedUser.email,savedUser.fullname, ENV.CLIENT_URL);
+    } catch (error) {
+        console.error("Failed to send welcome emails",error);
+    }
 
 }else{
     res.status(400).json({message:"invalid user data"});
@@ -86,7 +81,7 @@ export const login = async (req,res)=>{
                 fullname: user.fullname,
                 email: user.email,
                 profilePic: user.profilePic,
-                  onboarded: user.onboarded,
+                onboarded: user.onboarded,
              });
     } catch (error) {
         console.error("Error in login controller:",error);
@@ -116,6 +111,23 @@ try {
 } catch (error) {
     console.log("Error in update profile:", error);
     res.status(500).json({message: "Internal server error"});
-    
 }
+};
+
+// 👇 added: saves the user's public key after login
+export const savePublicKey = async (req, res) => {
+    try {
+        const { publicKey } = req.body;
+
+        if (!publicKey) {
+            return res.status(400).json({ message: "Public key is required" });
+        }
+
+        await User.findByIdAndUpdate(req.user._id, { publicKey });
+
+        res.status(200).json({ message: "Public key saved" });
+    } catch (error) {
+        console.error("Error saving public key:", error);
+        res.status(500).json({ message: "Internal server error" });
+    }
 };
