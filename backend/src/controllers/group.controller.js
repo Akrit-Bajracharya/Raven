@@ -1,7 +1,9 @@
+// backend/src/controllers/group.controller.js
 import Group from "../models/Group.js";
 import Message from "../models/Message.js";
 import cloudinary from "../lib/cloudinary.js";
 import { io } from "../lib/socket.js";
+import { profanityFilter } from "../lib/profanityFilter.js"; // 👈 added
 
 // Create a group
 export const createGroup = async (req, res) => {
@@ -44,11 +46,7 @@ export const getGroupMessages = async (req, res) => {
   try {
     const { groupId } = req.params;
 
-    // make sure user is a member
-    const group = await Group.findOne({
-      _id: groupId,
-      members: req.user._id,
-    });
+    const group = await Group.findOne({ _id: groupId, members: req.user._id });
     if (!group) return res.status(403).json({ message: "Access denied" });
 
     const messages = await Message.find({ groupId }).populate(
@@ -76,6 +74,21 @@ export const sendGroupMessage = async (req, res) => {
     const group = await Group.findOne({ _id: groupId, members: senderId });
     if (!group) return res.status(403).json({ message: "Access denied" });
 
+    // ── Profanity filter (group messages are never encrypted) ───────
+    let filteredText = text;
+    if (text) {
+      const result = profanityFilter.filter(text);
+      if (result.action === "blocked") {
+        return res.status(400).json({
+          message: "Message contains prohibited language and was not sent.",
+        });
+      }
+      if (result.action === "replaced") {
+        filteredText = result.clean;
+      }
+    }
+    // ────────────────────────────────────────────────────────────────
+
     let imageUrl;
     if (image) {
       const uploadResponse = await cloudinary.uploader.upload(image);
@@ -85,13 +98,12 @@ export const sendGroupMessage = async (req, res) => {
     const newMessage = await Message.create({
       senderId,
       groupId,
-      text,
+      text: filteredText, // 👈 use filtered text
       image: imageUrl,
     });
 
     await newMessage.populate("senderId", "fullname profilePic");
 
-    // emit to everyone in the socket room for this group
     io.to(groupId.toString()).emit("newGroupMessage", newMessage);
 
     res.status(201).json(newMessage);
