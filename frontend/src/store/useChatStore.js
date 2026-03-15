@@ -114,19 +114,24 @@ export const useChatStore = create((set, get) => ({
       let payload = { ...messageData };
 
       // Encrypt text if both keys are available
-      if (messageData.text && selectedUser?.publicKey) {
-        const myPrivateKey = await encryption.loadPrivateKey();
+if (messageData.text && selectedUser?.publicKey) {
+  const myPrivateKey = await encryption.loadPrivateKey();
 
-        if (myPrivateKey) {
-          const { ciphertext, iv } = await encryption.prepareMessage(
-            messageData.text,
-            myPrivateKey,
-            selectedUser.publicKey
-          );
-          // Send encrypted — don't send plain text
-          payload = { ...messageData, text: undefined, ciphertext, iv };
-        }
-      }
+  if (myPrivateKey) {
+    // 👇 Filter profanity BEFORE encrypting
+    const cleanText = messageData.text.replace(
+      /\b(ass|asshole|bastard|bitch|bollocks|bullshit|cock|crap|cunt|damn|dick|dipshit|dumbass|fag|faggot|fuck|fucker|fucking|goddamn|jackass|jerk|motherfucker|nigga|nigger|piss|prick|pussy|shit|shithead|slut|twat|whore|wanker)\b/gi,
+      match => "*".repeat(match.length)
+    );
+
+    const { ciphertext, iv } = await encryption.prepareMessage(
+      cleanText,                          // 👈 encrypt the clean version
+      myPrivateKey,
+      selectedUser.publicKey
+    );
+    payload = { ...messageData, text: undefined, ciphertext, iv };
+  }
+}
 
       const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, payload);
 

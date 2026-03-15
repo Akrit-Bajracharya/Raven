@@ -50,8 +50,8 @@ export const getMessagesByUserId = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   try {
-    // 👇 modified: accept ciphertext + iv alongside text and image
-    const { text, image, ciphertext, iv } = req.body;
+    const { image, ciphertext, iv } = req.body;  // ✅ text removed from here
+    const text = req.body.text;                  // ✅ text read separately, gets the cleaned value
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
