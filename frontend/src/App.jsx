@@ -3,19 +3,24 @@ import ChatPage from "./pages/ChatPage";
 import LoginPage from "./pages/LoginPage";
 import SignupPage from "./pages/SignupPage";
 import { useAuthStore } from "./store/useAuthStore";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import PageLoader from "./components/PageLoader"
 import { Toaster } from "react-hot-toast";
 import useThemeStore from "./store/useThemeStore";
 import OnboardingPage from "./pages/OnboardingPage";
 import CallModal from "./components/CallModal";
 import IncomingCallModal from "./components/IncomingCallModal";
-import { useCallStore } from "./store/useCallStore";
-import { useWebRTC } from "./store/useWebRTC";
+import { useCallStore } from "./store/Usecallstore.js"
+import { useWebRTC } from "./store/Usewebrtc.js"
 
 function App() {
-  const { authUser, checkAuth, isCheckingAuth } = useAuthStore();
-  const { handleAnswer, handleIceCandidate } = useWebRTC();
+  const { authUser, checkAuth, isCheckingAuth, socket } = useAuthStore();
+
+  const webRTC = useWebRTC();
+  const webRTCRef = useRef(webRTC);
+  useEffect(() => {
+    webRTCRef.current = webRTC;
+  });
 
   useThemeStore();
 
@@ -24,7 +29,6 @@ function App() {
   }, [checkAuth]);
 
   useEffect(() => {
-    const socket = useAuthStore.getState().socket;
     if (!authUser || !socket) return;
 
     socket.on("call:incoming", (data) => {
@@ -32,7 +36,7 @@ function App() {
     });
 
     socket.on("call:accepted", async ({ answer }) => {
-      await handleAnswer(answer);
+      await webRTCRef.current.handleAnswer(answer);
       useCallStore.getState().setCallStatus("connected");
     });
 
@@ -45,7 +49,7 @@ function App() {
     });
 
     socket.on("call:ice-candidate", async ({ candidate }) => {
-      await handleIceCandidate(candidate);
+      await webRTCRef.current.handleIceCandidate(candidate);
     });
 
     socket.on("call:camera-toggle", ({ isCameraOff }) => {
@@ -60,7 +64,7 @@ function App() {
       socket.off("call:ice-candidate");
       socket.off("call:camera-toggle");
     };
-  }, [authUser]);
+  }, [authUser, socket]);
 
   if (isCheckingAuth) return <PageLoader />
 
@@ -69,10 +73,8 @@ function App() {
       className="min-h-screen relative flex items-center justify-center p-4 overflow-hidden"
       style={{ backgroundColor: "var(--bg-base)", color: "var(--text-primary)" }}
     >
-      {/* Background grid */}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#4f4f4f2e_1px,transparent_1px),linear-gradient(to_bottom,#4f4f4f2e_1px,transparent_1px)] bg-[size:14px_24px]" />
 
-      {/* Glow blobs */}
       <div
         className="absolute top-0 -left-4 size-96 opacity-20 blur-[100px]"
         style={{ backgroundColor: "var(--accent)" }}
@@ -120,7 +122,6 @@ function App() {
         />
       </Routes>
 
-      {/* Global call modals — render on top of everything */}
       <CallModal />
       <IncomingCallModal />
 

@@ -111,13 +111,13 @@ const TRAINING_DATA = [
 
 class MarkovChain {
   constructor(order = 3) {
-    this.order = order; // trigram  uses last 3 words as key
+    this.order = order; // trigram uses last 3 words as key
     this.chain = new Map();
-    this.unigramFreq = new Map(); //  frequency table for fallback
+    this.unigramFreq = new Map(); // frequency table for fallback
     this._train(TRAINING_DATA);
   }
 
-  //  Private: build chain from array of sentences 
+  // Private: build chain from array of sentences
   _train(sentences) {
     for (const sentence of sentences) {
       const words = sentence.toLowerCase().trim().split(/\s+/);
@@ -127,25 +127,28 @@ class MarkovChain {
         this.unigramFreq.set(word, (this.unigramFreq.get(word) || 0) + 1);
       }
 
-      if (words.length < this.order + 1) continue;
+      // Train BOTH bigrams and trigrams so bigram fallback actually works
+      for (let order = 2; order <= this.order; order++) {
+        if (words.length < order + 1) continue;
 
-      for (let i = 0; i <= words.length - this.order - 1; i++) {
-        const key  = words.slice(i, i + this.order).join(" ");
-        const next = words[i + this.order];
-        if (!this.chain.has(key)) this.chain.set(key, new Map());
-        const nextMap = this.chain.get(key);
-        nextMap.set(next, (nextMap.get(next) || 0) + 1); //  store frequency not array
+        for (let i = 0; i <= words.length - order - 1; i++) {
+          const key  = words.slice(i, i + order).join(" ");
+          const next = words[i + order];
+          if (!this.chain.has(key)) this.chain.set(key, new Map());
+          const nextMap = this.chain.get(key);
+          nextMap.set(next, (nextMap.get(next) || 0) + 1);
+        }
       }
     }
   }
 
-  //  Public: add new sentences at runtime (learns from chat history) 
+  // Public: add new sentences at runtime (learns from chat history)
   addSentences(sentences) {
     if (!sentences || !Array.isArray(sentences)) return;
     this._train(sentences);
   }
 
-  //  Private: pick best next word from a frequency map 
+  // Private: pick best next word from a frequency map
   _pickBest(freqMap) {
     if (!freqMap || freqMap.size === 0) return null;
     let bestWord  = null;
@@ -159,7 +162,7 @@ class MarkovChain {
     return bestWord;
   }
 
-  //  Public: predict next maxWords words given input string 
+  // Public: predict next maxWords words given input string
   predict(input, maxWords = 5) {
     if (!input || typeof input !== "string") return "";
 
@@ -170,7 +173,6 @@ class MarkovChain {
     let   current = [...words];
 
     for (let i = 0; i < maxWords; i++) {
-      // Try trigram first, then bigram fallback, then unigram fallback
       let next = null;
 
       // Trigram lookup (order = 3)
@@ -179,18 +181,18 @@ class MarkovChain {
         next = this._pickBest(this.chain.get(key3));
       }
 
-      // Bigram fallback (order = 2)
+      // Bigram fallback (order = 2) — now works because bigrams are trained
       if (!next && current.length >= 2) {
         const key2 = current.slice(-2).join(" ");
         next = this._pickBest(this.chain.get(key2));
       }
 
-      // Unigram fallback (order = 1)
+      // Unigram fallback (order = 1) — fixed: matches last word exactly, not substring
       if (!next && current.length >= 1) {
-        const key1 = current.slice(-1).join(" ");
-        // find any trigram/bigram key ending with this word
+        const key1 = current[current.length - 1];
         for (const [key, freqMap] of this.chain) {
-          if (key.endsWith(key1)) {
+          const keyWords = key.split(" ");
+          if (keyWords[keyWords.length - 1] === key1) {
             next = this._pickBest(freqMap);
             break;
           }
@@ -206,7 +208,7 @@ class MarkovChain {
     return result.join(" ");
   }
 
-  //  Public: stats for debugging 
+  // Public: stats for debugging
   stats() {
     return {
       keys:     this.chain.size,
@@ -216,5 +218,5 @@ class MarkovChain {
   }
 }
 
-// Singleton  shared across all requests
-export const markov = new MarkovChain(3);
+// Singleton shared across all requests
+export const markov = new MarkovChain(3); 

@@ -1,10 +1,12 @@
 // frontend/src/components/MessageInput.jsx
-import { useState, useRef, useCallback } from "react";
+
+import { useState, useRef, useCallback, useEffect } from "react";
 import toast from "react-hot-toast";
 import useKeyboardSound from "../hooks/useKeyboardSound";
 import { useChatStore } from "../store/useChatStore";
 import { axiosInstance } from "../lib/axios";
 import { ImageIcon, SendIcon, XIcon } from "lucide-react";
+import { useAuthStore } from "../store/useAuthStore";
 
 const CLIENT_WORDS = [
   "ass", "asshole", "bastard", "bitch", "bollocks", "bullshit",
@@ -42,11 +44,93 @@ function MessageInput({ onSend }) {
   const [profanityWarning, setProfanityWarning] = useState(false);
   const [suggestion, setSuggestion]             = useState("");
 
+  // ── Moderation state ───────────────────────────────────────
+  const [isBanned, setIsBanned]       = useState(false);
+  const [banTimeLeft, setBanTimeLeft] = useState("");
+  const [banUntil, setBanUntil]       = useState(null);
+  // ──────────────────────────────────────────────────────────
+
   const fileInputRef = useRef(null);
   const debounceRef  = useRef(null);
   const suggestRef   = useRef(null);
+  const banTimerRef  = useRef(null);
 
-  const { sendMessage, messages, isSoundEnabled } = useChatStore();
+  const { sendMessage, messages, isSoundEnabled, socket } = useChatStore();
+  const { socket: authSocket } = useAuthStore(); // use whichever store holds your socket
+
+  // ── Listen for moderation events from the server ──────────
+  useEffect(() => {
+    // Try both stores since socket may live in either
+    const activeSocket = socket || authSocket;
+    if (!activeSocket) return;
+
+    // Server sends this on strike 1 or 2
+    activeSocket.on("moderation:warning", ({ message, strikes, strikesLeft }) => {
+      toast.error(message, {
+        duration: 6000,
+        style: {
+          background: "#1a1a1a",
+          color: "#f59e0b",
+          border: "1px solid #f59e0b",
+          borderRadius: "10px",
+          fontSize: "13px",
+        },
+        icon: "⚠️",
+      });
+    });
+
+    // Server sends this on strike 3 or when already banned
+    activeSocket.on("moderation:banned", ({ message, bannedUntil, timeLeft }) => {
+      setIsBanned(true);
+      setBanTimeLeft(timeLeft);
+      setBanUntil(new Date(bannedUntil));
+
+      toast.error(message, {
+        duration: 10000,
+        style: {
+          background: "#1a1a1a",
+          color: "#ef4444",
+          border: "1px solid #ef4444",
+          borderRadius: "10px",
+          fontSize: "13px",
+        },
+        icon: "🚫",
+      });
+    });
+
+    return () => {
+      activeSocket.off("moderation:warning");
+      activeSocket.off("moderation:banned");
+    };
+  }, [socket, authSocket]);
+
+  // ── Count down the ban timer every minute ─────────────────
+  useEffect(() => {
+    if (!isBanned || !banUntil) return;
+
+    banTimerRef.current = setInterval(() => {
+      const now = Date.now();
+      if (now >= banUntil.getTime()) {
+        // ban has expired
+        setIsBanned(false);
+        setBanTimeLeft("");
+        setBanUntil(null);
+        clearInterval(banTimerRef.current);
+        toast.success("Your mute has been lifted. You can send messages again.", {
+          duration: 5000,
+          icon: "✅",
+        });
+      } else {
+        const ms   = banUntil.getTime() - now;
+        const mins = Math.ceil(ms / 60000);
+        setBanTimeLeft(mins <= 1 ? "less than a minute" : `${mins} minutes`);
+      }
+    }, 30000); // update every 30 seconds
+
+    return () => clearInterval(banTimerRef.current);
+  }, [isBanned, banUntil]);
+
+  // ─────────────────────────────────────────────────────────
 
   const fetchSuggestion = useCallback(async (value) => {
     if (!value || value.trim().length < 3) { setSuggestion(""); return; }
@@ -89,19 +173,70 @@ function MessageInput({ onSend }) {
     if (e.key === "Escape") setSuggestion("");
   };
 
-  const handleSendMessage = (e) => {
+  const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!text.trim() && !imagePreview) return;
+
+    // ── Block send if banned ──────────────────────────────
+    if (isBanned) {
+      toast.error(`You are muted for ${banTimeLeft}. You cannot send messages.`, {
+        duration: 4000,
+        icon: "🚫",
+      });
+      return;
+    }
+    // ─────────────────────────────────────────────────────
+
     if (isSoundEnabled) playRandomKeyStrokeSound();
 
-    const sender = onSend || sendMessage;
-    sender({ text: text.trim(), image: imagePreview });
+    try {
+      const sender = onSend || sendMessage;
+      await sender({ text: text.trim(), image: imagePreview });
 
-    setText("");
-    setImagePreview(null);
-    setProfanityWarning(false);
-    setSuggestion("");
-    if (fileInputRef.current) fileInputRef.current.value = "";
+      setText("");
+      setImagePreview(null);
+      setProfanityWarning(false);
+      setSuggestion("");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+
+    } catch (err) {
+      // ── Handle HTTP moderation errors ──────────────────
+      const data = err?.response?.data;
+
+      if (data?.error === "toxic") {
+        // warning already sent via socket, but fallback toast if socket missed
+        toast.error(data.message, {
+          duration: 6000,
+          icon: "⚠️",
+          style: {
+            background: "#1a1a1a",
+            color: "#f59e0b",
+            border: "1px solid #f59e0b",
+            borderRadius: "10px",
+            fontSize: "13px",
+          },
+        });
+      } else if (data?.error === "banned") {
+        setIsBanned(true);
+        setBanTimeLeft(data.timeLeft || "60 minutes");
+        if (data.bannedUntil) setBanUntil(new Date(data.bannedUntil));
+
+        toast.error(data.message, {
+          duration: 10000,
+          icon: "🚫",
+          style: {
+            background: "#1a1a1a",
+            color: "#ef4444",
+            border: "1px solid #ef4444",
+            borderRadius: "10px",
+            fontSize: "13px",
+          },
+        });
+      } else {
+        toast.error("Failed to send message.");
+      }
+      // ─────────────────────────────────────────────────
+    }
   };
 
   const handleImageChange = (e) => {
@@ -133,10 +268,22 @@ function MessageInput({ onSend }) {
         </div>
       )}
 
-      {profanityWarning && (
+      {/* ── Ban banner ──────────────────────────────────────── */}
+      {isBanned && (
+        <div className="max-w-3xl mx-auto mb-3 px-4 py-3 rounded-lg flex items-center gap-2"
+          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid #ef4444" }}>
+          <span style={{ fontSize: "16px" }}>🚫</span>
+          <p style={{ color: "#ef4444", fontSize: "13px", fontWeight: 600 }}>
+            You are muted for {banTimeLeft}. Messaging is disabled.
+          </p>
+        </div>
+      )}
+      {/* ─────────────────────────────────────────────────────── */}
+
+      {profanityWarning && !isBanned && (
         <div className="max-w-3xl mx-auto mb-2">
           <p style={{ color: "#f59e0b", fontSize: "12px" }}>
-            ? Your message may contain inappropriate language.
+            ⚠️ Your message may contain inappropriate language.
           </p>
         </div>
       )}
@@ -169,28 +316,43 @@ function MessageInput({ onSend }) {
             value={text}
             onChange={handleTextChange}
             onKeyDown={handleKeyDown}
+            disabled={isBanned}
             className="w-full rounded-lg py-2 px-4 outline-none"
             style={{
               backgroundColor: "var(--bg-input)",
-              border: profanityWarning ? "1px solid #f59e0b" : "1px solid var(--border)",
+              border: isBanned
+                ? "1px solid #ef4444"
+                : profanityWarning
+                  ? "1px solid #f59e0b"
+                  : "1px solid var(--border)",
               color: "var(--text-primary)",
               position: "relative",
               zIndex: 1,
               background: "transparent",
+              opacity: isBanned ? 0.5 : 1,
+              cursor: isBanned ? "not-allowed" : "text",
             }}
-            placeholder="Type your message..."
+            placeholder={isBanned ? `Muted for ${banTimeLeft}…` : "Type your message..."}
           />
         </div>
 
         <input type="file" accept="image/*" ref={fileInputRef} onChange={handleImageChange} className="hidden" />
 
         <button type="button" onClick={() => fileInputRef.current?.click()}
+          disabled={isBanned}
           className="rounded-lg px-4 transition-colors"
-          style={{ backgroundColor: "var(--bg-elevated)", color: imagePreview ? "var(--accent)" : "var(--text-secondary)", border: "1px solid var(--border)" }}>
+          style={{
+            backgroundColor: "var(--bg-elevated)",
+            color: imagePreview ? "var(--accent)" : "var(--text-secondary)",
+            border: "1px solid var(--border)",
+            opacity: isBanned ? 0.4 : 1,
+            cursor: isBanned ? "not-allowed" : "pointer",
+          }}>
           <ImageIcon className="w-5 h-5" />
         </button>
 
-        <button type="submit" disabled={!text.trim() && !imagePreview}
+        <button type="submit"
+          disabled={(!text.trim() && !imagePreview) || isBanned}
           className="rounded-lg px-4 py-2 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
           style={{ backgroundColor: "var(--accent)", color: "var(--bubble-out-text)" }}>
           <SendIcon className="w-5 h-5" />
