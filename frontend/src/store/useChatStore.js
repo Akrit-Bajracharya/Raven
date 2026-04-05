@@ -2,7 +2,32 @@ import { create } from "zustand";
 import { axiosInstance } from "../lib/axios";
 import toast from "react-hot-toast";
 import { useAuthStore } from "./useAuthStore";
-import encryption from "../lib/encryption"; // 👈 added
+import encryption from "../lib/encryption";
+
+const PROFANITY_REGEX = /\b(ass|asshole|bastard|bitch|bollocks|bullshit|cock|crap|cunt|damn|dick|dipshit|dumbass|fag|faggot|fuck|fucker|fucking|goddamn|jackass|jerk|motherfucker|nigga|nigger|piss|prick|pussy|shit|shithead|slut|twat|whore|wanker)\b/gi;
+
+function cleanText(text) {
+  if (!text || typeof text !== "string") return text;
+  return text.replace(PROFANITY_REGEX, match => "*".repeat(match.length));
+}
+
+async function decryptMsg(msg, myPrivateKey, theirPublicKey) {
+  if (!msg.ciphertext || !msg.iv || !myPrivateKey || !theirPublicKey) {
+    return { ...msg, text: cleanText(msg.text) };
+  }
+  try {
+    const plaintext = await encryption.readMessage(
+      msg.ciphertext,
+      msg.iv,
+      myPrivateKey,
+      theirPublicKey
+    );
+    return { ...msg, text: cleanText(plaintext) };
+  } catch (e) {
+    console.error("decryptMsg failed:", e.message);
+    return { ...msg, text: "[encrypted message]" };
+  }
+}
 
 export const useChatStore = create((set, get) => ({
   allContacts: [],
@@ -48,34 +73,16 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  // ── MODIFIED: decrypt messages when loading ──────────────────────
   getMessagesByUserId: async (userId) => {
     set({ isMessagesLoading: true });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      const { selectedUser } = get();
-
+      const selectedUser = get().selectedUser;
       const myPrivateKey = await encryption.loadPrivateKey();
       const theirPublicKey = selectedUser?.publicKey;
 
-      // If keys exist, decrypt — otherwise show as-is (fallback)
       const decryptedMessages = await Promise.all(
-        res.data.map(async (msg) => {
-          if (msg.ciphertext && msg.iv && myPrivateKey && theirPublicKey) {
-            try {
-              const plaintext = await encryption.readMessage(
-                msg.ciphertext,
-                msg.iv,
-                myPrivateKey,
-                theirPublicKey
-              );
-              return { ...msg, text: plaintext };
-            } catch {
-              return { ...msg, text: "[encrypted message]" };
-            }
-          }
-          return msg; // unencrypted message (old messages before encryption was added)
-        })
+        res.data.map((msg) => decryptMsg(msg, myPrivateKey, theirPublicKey))
       );
 
       set({ messages: decryptedMessages });
@@ -86,19 +93,18 @@ export const useChatStore = create((set, get) => ({
     }
   },
 
-  // ── MODIFIED: encrypt message before sending ─────────────────────
   sendMessage: async (messageData) => {
     const { selectedUser, messages } = get();
     const { authUser } = useAuthStore.getState();
 
     const tempId = `temp-${Date.now()}`;
+    const displayText = cleanText(messageData.text);
 
-    // Optimistic UI shows the plain text immediately
     const optimisticMessage = {
       _id: tempId,
       senderId: authUser._id,
       receiverId: selectedUser._id,
-      text: messageData.text,
+      text: displayText,
       image: messageData.image,
       createdAt: new Date().toISOString(),
       isOptimistic: true,
@@ -113,69 +119,67 @@ export const useChatStore = create((set, get) => ({
     try {
       let payload = { ...messageData };
 
-      // Encrypt text if both keys are available
-if (messageData.text && selectedUser?.publicKey) {
-  const myPrivateKey = await encryption.loadPrivateKey();
+      if (messageData.text && selectedUser?.publicKey) {
+        const myPrivateKey = await encryption.loadPrivateKey();
+        if (myPrivateKey) {
+          const cleaned = cleanText(messageData.text);
+          const { ciphertext, iv } = await encryption.prepareMessage(
+            cleaned,
+            myPrivateKey,
+            selectedUser.publicKey
+          );
+          payload = { ...messageData, text: undefined, ciphertext, iv };
+        }
+      } else if (messageData.text) {
+        payload = { ...messageData, text: displayText };
+      }
 
-  if (myPrivateKey) {
-    // 👇 Filter profanity BEFORE encrypting
-    const cleanText = messageData.text.replace(
-      /\b(ass|asshole|bastard|bitch|bollocks|bullshit|cock|crap|cunt|damn|dick|dipshit|dumbass|fag|faggot|fuck|fucker|fucking|goddamn|jackass|jerk|motherfucker|nigga|nigger|piss|prick|pussy|shit|shithead|slut|twat|whore|wanker)\b/gi,
-      match => "*".repeat(match.length)
-    );
+      const res = await axiosInstance.post(
+        `/messages/send/${selectedUser._id}`,
+        payload
+      );
 
-    const { ciphertext, iv } = await encryption.prepareMessage(
-      cleanText,                          // 👈 encrypt the clean version
-      myPrivateKey,
-      selectedUser.publicKey
-    );
-    payload = { ...messageData, text: undefined, ciphertext, iv };
-  }
-}
+      const confirmedMessage = {
+        ...res.data,
+        text: res.data.text ? cleanText(res.data.text) : displayText,
+      };
 
-      const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, payload);
-
-      // Replace optimistic message with real one, keep text readable in UI
-      const confirmedMessage = { ...res.data, text: messageData.text };
-      set({ messages: [...messages, confirmedMessage] });
-
+      set({
+        messages: [
+          ...get().messages.filter((m) => m._id !== tempId),
+          confirmedMessage,
+        ],
+      });
     } catch (error) {
-      set({ messages }); // rollback optimistic message
+      set({ messages: get().messages.filter((m) => m._id !== tempId) });
       toast.error(error.response?.data?.message || "Failed to send message");
     }
   },
 
-  // ── MODIFIED: decrypt incoming socket messages ───────────────────
   subscribeToMessages: () => {
-    const { selectedUser } = get();
-    if (!selectedUser) return;
-
     const socket = useAuthStore.getState().socket;
+    if (!socket) return;
 
     socket.on("newMessage", async (newMessage) => {
-      const isMessageSentFromSelectedUser = newMessage.senderId === selectedUser._id;
-      if (!isMessageSentFromSelectedUser) return;
+      const selectedUser = get().selectedUser;
+      if (!selectedUser) return;
 
-      // Decrypt incoming message
-      let displayMessage = newMessage;
-      if (newMessage.ciphertext && newMessage.iv && selectedUser?.publicKey) {
-        try {
-          const myPrivateKey = await encryption.loadPrivateKey();
-          const plaintext = await encryption.readMessage(
-            newMessage.ciphertext,
-            newMessage.iv,
-            myPrivateKey,
-            selectedUser.publicKey
-          );
-          displayMessage = { ...newMessage, text: plaintext };
-        } catch {
-          displayMessage = { ...newMessage, text: "[encrypted message]" };
-        }
-      }
+      const isFromSelectedUser = newMessage.senderId === selectedUser._id;
+      if (!isFromSelectedUser) return;
+
+      const myPrivateKey = await encryption.loadPrivateKey();
+
+      // FIX: prefer senderPublicKey attached by the server to the socket event,
+      // and fall back to selectedUser.publicKey.
+      // Previously only selectedUser.publicKey was used, which can be undefined
+      // if the chats list didn't fully populate the user object — causing the
+      // recipient to see "[encrypted message]" instead of the plaintext.
+      const theirPublicKey = newMessage.senderPublicKey || selectedUser.publicKey;
+
+      const displayMessage = await decryptMsg(newMessage, myPrivateKey, theirPublicKey);
 
       const { isSoundEnabled } = get();
-      const currentMessages = get().messages;
-      set({ messages: [...currentMessages, displayMessage] });
+      set({ messages: [...get().messages, displayMessage] });
 
       if (isSoundEnabled) {
         const notificationSound = new Audio("/sounds/notification.mp3");
@@ -187,6 +191,6 @@ if (messageData.text && selectedUser?.publicKey) {
 
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
-    socket.off("newMessage");
+    if (socket) socket.off("newMessage");
   },
 }));
