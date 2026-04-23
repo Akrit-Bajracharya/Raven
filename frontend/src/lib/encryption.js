@@ -4,123 +4,65 @@
 
 const encryption = {
 
-  // ─────────────────────────────────────────
-  // STEP 1: Generate your key pair (run once on login)
-  // Private key stays on YOUR device only
-  // Public key gets shared with the server so others can message you
-  // ─────────────────────────────────────────
   async generateKeyPair() {
     const keyPair = await crypto.subtle.generateKey(
       { name: "ECDH", namedCurve: "P-256" },
       true,
       ["deriveKey"]
     );
-
-    // Export public key to send to server
     const publicKeyBuffer = await crypto.subtle.exportKey("spki", keyPair.publicKey);
     const publicKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(publicKeyBuffer)));
-
-    // Export private key to store locally (IndexedDB)
     const privateKeyBuffer = await crypto.subtle.exportKey("pkcs8", keyPair.privateKey);
     const privateKeyBase64 = btoa(String.fromCharCode(...new Uint8Array(privateKeyBuffer)));
-
-    // Save to IndexedDB immediately
     await encryption.savePrivateKey(privateKeyBase64);
-
     return { publicKeyBase64, privateKeyBase64 };
   },
 
-  // ─────────────────────────────────────────
-  // STEP 2: Diffie-Hellman magic
-  // You + recipient both have each other's public keys
-  // This derives the SAME shared secret on both sides
-  // Neither of you ever sent the secret — it just... appears
-  // ─────────────────────────────────────────
   async deriveSharedSecret(myPrivateKeyBase64, theirPublicKeyBase64) {
-    // Import your private key
     const privateKeyBuffer = Uint8Array.from(atob(myPrivateKeyBase64), c => c.charCodeAt(0));
     const privateKey = await crypto.subtle.importKey(
-      "pkcs8",
-      privateKeyBuffer,
-      { name: "ECDH", namedCurve: "P-256" },
-      false,
-      ["deriveKey"]
+      "pkcs8", privateKeyBuffer,
+      { name: "ECDH", namedCurve: "P-256" }, false, ["deriveKey"]
     );
-
-    // Import their public key
     const publicKeyBuffer = Uint8Array.from(atob(theirPublicKeyBase64), c => c.charCodeAt(0));
     const theirPublicKey = await crypto.subtle.importKey(
-      "spki",
-      publicKeyBuffer,
-      { name: "ECDH", namedCurve: "P-256" },
-      false,
-      []
+      "spki", publicKeyBuffer,
+      { name: "ECDH", namedCurve: "P-256" }, false, []
     );
-
-    // Derive the shared AES key using Diffie-Hellman
-    // Both users run this and get the EXACT same key
-    const sharedKey = await crypto.subtle.deriveKey(
+    return await crypto.subtle.deriveKey(
       { name: "ECDH", public: theirPublicKey },
       privateKey,
-      { name: "AES-GCM", length: 256 },
-      false,
-      ["encrypt", "decrypt"]
+      { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]
     );
-
-    return sharedKey;
   },
 
-  // ─────────────────────────────────────────
-  // STEP 3: Encrypt a message with AES-256-GCM
-  // Uses the shared secret derived from Diffie-Hellman above
-  // Returns an object you can safely send over the network
-  // ─────────────────────────────────────────
   async encryptMessage(plaintext, sharedKey) {
-    // Random IV — different every single message (critical for security)
     const iv = crypto.getRandomValues(new Uint8Array(12));
-
     const encodedMessage = new TextEncoder().encode(plaintext);
-
     const encryptedBuffer = await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv },
-      sharedKey,
-      encodedMessage
+      { name: "AES-GCM", iv }, sharedKey, encodedMessage
     );
-
     return {
       ciphertext: btoa(String.fromCharCode(...new Uint8Array(encryptedBuffer))),
       iv: btoa(String.fromCharCode(...iv)),
     };
   },
 
-  // ─────────────────────────────────────────
-  // STEP 4: Decrypt a received message
-  // ─────────────────────────────────────────
   async decryptMessage(ciphertext, ivBase64, sharedKey) {
     const encryptedBuffer = Uint8Array.from(atob(ciphertext), c => c.charCodeAt(0));
     const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
-
     const decryptedBuffer = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv },
-      sharedKey,
-      encryptedBuffer
+      { name: "AES-GCM", iv }, sharedKey, encryptedBuffer
     );
-
     return new TextDecoder().decode(decryptedBuffer);
   },
 
-  // ─────────────────────────────────────────
-  // KEY STORAGE — IndexedDB (safer than localStorage)
-  // Private key never leaves the device
-  // ─────────────────────────────────────────
   async savePrivateKey(privateKeyBase64) {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open("RavenKeys", 1);
-
       request.onupgradeneeded = (e) => {
         e.target.result.createObjectStore("keys", { keyPath: "id" });
       };
-
       request.onsuccess = (e) => {
         const db = e.target.result;
         const tx = db.transaction("keys", "readwrite");
@@ -128,7 +70,6 @@ const encryption = {
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       };
-
       request.onerror = () => reject(request.error);
     });
   },
@@ -136,11 +77,9 @@ const encryption = {
   async loadPrivateKey() {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open("RavenKeys", 1);
-
       request.onupgradeneeded = (e) => {
         e.target.result.createObjectStore("keys", { keyPath: "id" });
       };
-
       request.onsuccess = (e) => {
         const db = e.target.result;
         const tx = db.transaction("keys", "readonly");
@@ -148,53 +87,70 @@ const encryption = {
         req.onsuccess = () => resolve(req.result?.value || null);
         req.onerror = () => reject(req.error);
       };
-
       request.onerror = () => reject(request.error);
     });
   },
 
-  // ─────────────────────────────────────────
-  // HELPER: Full send flow
-  // Call this in useChatStore.js when sending a message
-  // ─────────────────────────────────────────
   async prepareMessage(plaintext, myPrivateKeyBase64, theirPublicKeyBase64) {
     const sharedKey = await encryption.deriveSharedSecret(myPrivateKeyBase64, theirPublicKeyBase64);
-    const { ciphertext, iv } = await encryption.encryptMessage(plaintext, sharedKey);
-    return { ciphertext, iv };
+    return await encryption.encryptMessage(plaintext, sharedKey);
   },
 
-  // HELPER: Full receive flow
-  // Call this in ChatContainer.jsx when displaying messages
   async readMessage(ciphertext, iv, myPrivateKeyBase64, theirPublicKeyBase64) {
     const sharedKey = await encryption.deriveSharedSecret(myPrivateKeyBase64, theirPublicKeyBase64);
     return await encryption.decryptMessage(ciphertext, iv, sharedKey);
   },
+
+  // ─────────────────────────────────────────
+  // Encrypt private key with user's password for server backup
+  // ─────────────────────────────────────────
+  async encryptPrivateKeyWithPassword(privateKeyBase64, password) {
+    const passwordKey = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(password),
+      "PBKDF2", false, ["deriveKey"]
+    );
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const aesKey = await crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+      passwordKey,
+      { name: "AES-GCM", length: 256 },
+      false, ["encrypt"]
+    );
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const encrypted = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv },
+      aesKey,
+      new TextEncoder().encode(privateKeyBase64)
+    );
+    return {
+      encryptedPrivateKey: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
+      salt: btoa(String.fromCharCode(...salt)),
+      iv: btoa(String.fromCharCode(...iv)),
+    };
+  },
+
+  // ─────────────────────────────────────────
+  // Decrypt private key backup using password
+  // ─────────────────────────────────────────
+  async decryptPrivateKeyWithPassword(encryptedPrivateKey, saltBase64, ivBase64, password) {
+    const passwordKey = await crypto.subtle.importKey(
+      "raw", new TextEncoder().encode(password),
+      "PBKDF2", false, ["deriveKey"]
+    );
+    const salt = Uint8Array.from(atob(saltBase64), c => c.charCodeAt(0));
+    const aesKey = await crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt, iterations: 100000, hash: "SHA-256" },
+      passwordKey,
+      { name: "AES-GCM", length: 256 },
+      false, ["decrypt"]
+    );
+    const iv = Uint8Array.from(atob(ivBase64), c => c.charCodeAt(0));
+    const encrypted = Uint8Array.from(atob(encryptedPrivateKey), c => c.charCodeAt(0));
+    const decrypted = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv }, aesKey, encrypted
+    );
+    return new TextDecoder().decode(decrypted);
+  },
 };
 
 export default encryption;
-
-
-// ─────────────────────────────────────────
-// HOW TO USE IN YOUR APP
-// ─────────────────────────────────────────
-
-// 1. On login — in useAuthStore.js:
-//
-//    import encryption from "../lib/encryption";
-//    const { publicKeyBase64 } = await encryption.generateKeyPair();
-//    await axiosInstance.post("/auth/save-public-key", { publicKey: publicKeyBase64 });
-
-// 2. Sending a message — in useChatStore.js:
-//
-//    import encryption from "../lib/encryption";
-//    const myPrivateKey = await encryption.loadPrivateKey();
-//    const theirPublicKey = selectedUser.publicKey; // must be stored on user object from server
-//    const { ciphertext, iv } = await encryption.prepareMessage(text, myPrivateKey, theirPublicKey);
-//    socket.emit("sendMessage", { ciphertext, iv, receiverId: selectedUser._id });
-
-// 3. Displaying a message — in ChatContainer.jsx:
-//
-//    import encryption from "../lib/encryption";
-//    const myPrivateKey = await encryption.loadPrivateKey();
-//    const theirPublicKey = message.senderPublicKey; // server must attach this to each message
-//    const plaintext = await encryption.readMessage(message.ciphertext, message.iv, myPrivateKey, theirPublicKey);

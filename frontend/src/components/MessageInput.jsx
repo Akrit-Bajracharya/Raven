@@ -56,15 +56,13 @@ function MessageInput({ onSend }) {
   const banTimerRef  = useRef(null);
 
   const { sendMessage, messages, isSoundEnabled, socket } = useChatStore();
-  const { socket: authSocket } = useAuthStore(); // use whichever store holds your socket
+  const { socket: authSocket } = useAuthStore();
 
   // ── Listen for moderation events from the server ──────────
   useEffect(() => {
-    // Try both stores since socket may live in either
     const activeSocket = socket || authSocket;
     if (!activeSocket) return;
 
-    // Server sends this on strike 1 or 2
     activeSocket.on("moderation:warning", ({ message, strikes, strikesLeft }) => {
       toast.error(message, {
         duration: 6000,
@@ -79,7 +77,6 @@ function MessageInput({ onSend }) {
       });
     });
 
-    // Server sends this on strike 3 or when already banned
     activeSocket.on("moderation:banned", ({ message, bannedUntil, timeLeft }) => {
       setIsBanned(true);
       setBanTimeLeft(timeLeft);
@@ -104,14 +101,13 @@ function MessageInput({ onSend }) {
     };
   }, [socket, authSocket]);
 
-  // ── Count down the ban timer every minute ─────────────────
+  // ── Count down the ban timer every 30 seconds ─────────────
   useEffect(() => {
     if (!isBanned || !banUntil) return;
 
     banTimerRef.current = setInterval(() => {
       const now = Date.now();
       if (now >= banUntil.getTime()) {
-        // ban has expired
         setIsBanned(false);
         setBanTimeLeft("");
         setBanUntil(null);
@@ -125,7 +121,7 @@ function MessageInput({ onSend }) {
         const mins = Math.ceil(ms / 60000);
         setBanTimeLeft(mins <= 1 ? "less than a minute" : `${mins} minutes`);
       }
-    }, 30000); // update every 30 seconds
+    }, 30000);
 
     return () => clearInterval(banTimerRef.current);
   }, [isBanned, banUntil]);
@@ -135,12 +131,21 @@ function MessageInput({ onSend }) {
   const fetchSuggestion = useCallback(async (value) => {
     if (!value || value.trim().length < 3) { setSuggestion(""); return; }
     try {
-      const chatHistory = (messages || [])
-        .slice(-10)
-        .filter(m => m.text && typeof m.text === "string")
-        .map(m => ({ text: m.text, fromMe: !!m.senderId }));
+      // ── FIX: messages are already fully decrypted in the store ──────────
+      // decryptMsg() in useChatStore resolves everything into .text before
+      // storing, so we can safely read .text here — it is always plaintext.
+      // We send decryptedHistory (array of strings) instead of the old
+      // chatHistory (array of objects) so the backend never sees ciphertext.
+      // ────────────────────────────────────────────────────────────────────
+      const decryptedHistory = (messages || [])
+        .slice(-20)                                     // last 20 messages for context
+        .filter(m => m.text && typeof m.text === "string" && m.text.trim().length > 4)
+        .map(m => m.text.toLowerCase().trim());         // plain strings only
 
-      const res = await axiosInstance.post("/suggest", { currentInput: value, chatHistory });
+      const res = await axiosInstance.post("/suggest", {
+        currentInput: value,
+        decryptedHistory,                               // ← replaces chatHistory
+      });
       setSuggestion(res.data.suggestion || "");
     } catch {
       setSuggestion("");
@@ -204,7 +209,6 @@ function MessageInput({ onSend }) {
       const data = err?.response?.data;
 
       if (data?.error === "toxic") {
-        // warning already sent via socket, but fallback toast if socket missed
         toast.error(data.message, {
           duration: 6000,
           icon: "⚠️",

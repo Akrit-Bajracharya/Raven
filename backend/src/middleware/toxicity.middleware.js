@@ -13,10 +13,6 @@ const MODEL_PATH = path.join(__dirname, "../data/trainedModel.json");
 classifier.load(MODEL_PATH);
 
 // ── Strike store (in-memory) ──────────────────────────────────────────────────
-// { userId: { strikes: number, bannedUntil: Date | null } }
-// Resets on server restart. Good enough for now — persist to MongoDB later
-// by adding strikes + bannedUntil fields to your User model if needed.
-// ─────────────────────────────────────────────────────────────────────────────
 const strikeMap = new Map();
 
 const MAX_STRIKES  = 3;
@@ -37,11 +33,25 @@ function minsLeft(bannedUntil) {
 
 // ── Middleware ────────────────────────────────────────────────────────────────
 export function toxicityMiddleware(req, res, next) {
-  const text   = req.body?.text || req.body?.message || req.body?.content;
   const userId = req.user?._id?.toString();
 
-  // skip if no text or no authenticated user
-  if (!text || !userId) return next();
+  // skip if no authenticated user
+  if (!userId) return next();
+
+  // ── Skip encrypted messages ───────────────────────────────────────────────
+  // When a message is end-to-end encrypted, req.body.ciphertext is set and
+  // req.body.text is absent. We cannot classify ciphertext, so we let it
+  // through — the profanity middleware already caught plain-text violations
+  // before encryption was applied on the client side.
+  if (req.body?.ciphertext && !req.body?.text) {
+    console.log(`[Moderation] Skipping toxicity check — message is E2E encrypted (user ${userId})`);
+    return next();
+  }
+
+  const text = req.body?.text || req.body?.message || req.body?.content;
+
+  // skip if no classifiable text
+  if (!text || typeof text !== "string" || text.trim().length === 0) return next();
 
   const record = getRecord(userId);
 
@@ -88,7 +98,7 @@ export function toxicityMiddleware(req, res, next) {
   // ── 4. Strike 3 → ban for 1 hour ─────────────────────────────────────────
   if (record.strikes >= MAX_STRIKES) {
     record.bannedUntil = new Date(Date.now() + BAN_DURATION);
-    record.strikes     = 0; // reset so next session starts fresh after ban
+    record.strikes     = 0;
 
     console.log(`[Moderation] User ${userId} banned until ${record.bannedUntil}`);
 

@@ -38,4 +38,8 @@ router.post(
 // layer 2: toxicityMiddleware  — catches toxic intent via ML model
 router.post("/send/:id", profanityMiddleware, toxicityMiddleware, sendMessage);
 
+router.post("/check-toxicity", protectRoute, toxicityMiddleware, (req, res) => {
+  res.status(200).json({ ok: true });
+});
+
 export default router;

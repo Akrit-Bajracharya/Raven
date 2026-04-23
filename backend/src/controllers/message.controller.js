@@ -7,7 +7,6 @@ import { io } from "../lib/socket.js";
 export const getAllContacts = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
-    // 👇 modified: include publicKey in response so frontend can encrypt
     const filteredUsers = await User.find({ _id: { $ne: loggedInUserId } }).select("-password");
     res.status(200).json(filteredUsers);
   } catch (error) {
@@ -25,7 +24,6 @@ export const getMessagesByUserId = async (req, res) => {
       return res.status(400).json({ error: "userToChatId is required" });
     }
 
-    // 👇 modified: also fetch the other user's publicKey and attach to each message
     const otherUser = await User.findById(userToChatId).select("publicKey");
 
     const messages = await Message.find({
@@ -35,7 +33,6 @@ export const getMessagesByUserId = async (req, res) => {
       ],
     });
 
-    // Attach sender's public key to each message so frontend can decrypt
     const messagesWithKey = messages.map((msg) => ({
       ...msg.toObject(),
       senderPublicKey: otherUser?.publicKey || "",
@@ -50,8 +47,8 @@ export const getMessagesByUserId = async (req, res) => {
 
 export const sendMessage = async (req, res) => {
   try {
-    const { image, ciphertext, iv } = req.body;  // ✅ text removed from here
-    const text = req.body.text;                  // ✅ text read separately, gets the cleaned value
+    const { image, ciphertext, iv, plaintextCache } = req.body; // ← plaintextCache added
+    const text = req.body.text;
     const { id: receiverId } = req.params;
     const senderId = req.user._id;
 
@@ -62,7 +59,6 @@ export const sendMessage = async (req, res) => {
       return res.status(400).json({ message: "Cannot send messages to yourself" });
     }
 
-    // Only friends can message each other
     const sender = await User.findById(senderId);
     const isFriend = sender.friends.map(f => f.toString()).includes(receiverId);
     if (!isFriend) {
@@ -80,19 +76,18 @@ export const sendMessage = async (req, res) => {
       imageUrl = uploadResponse.secure_url;
     }
 
-    // 👇 modified: save ciphertext + iv instead of plain text when encrypted
     const newMessage = new Message({
       senderId,
       receiverId,
-      text: ciphertext ? undefined : text,   // plain text only if not encrypted
-      ciphertext: ciphertext || undefined,    // encrypted message body
-      iv: iv || undefined,                    // encryption IV
+      text: ciphertext ? undefined : text,
+      ciphertext: ciphertext || undefined,
+      iv: iv || undefined,
+      plaintextCache: plaintextCache || undefined, // ← added
       image: imageUrl,
     });
 
     await newMessage.save();
 
-    // 👇 modified: attach sender's publicKey so receiver can decrypt via socket
     const senderPublicKey = sender.publicKey || "";
     const messageToEmit = { ...newMessage.toObject(), senderPublicKey };
 
@@ -111,7 +106,6 @@ export const sendMessage = async (req, res) => {
 export const getChatPartners = async (req, res) => {
   try {
     const loggedInUserId = req.user._id;
-    // 👇 modified: include publicKey in friends list so chat store can access it
     const user = await User.findById(loggedInUserId).populate("friends", "-password");
     res.status(200).json(user.friends);
   } catch (error) {

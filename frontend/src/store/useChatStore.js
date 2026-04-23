@@ -4,6 +4,8 @@ import toast from "react-hot-toast";
 import { useAuthStore } from "./useAuthStore";
 import encryption from "../lib/encryption";
 
+const USE_PREVIEW_TEXT = true; // ← added
+
 const PROFANITY_REGEX = /\b(ass|asshole|bastard|bitch|bollocks|bullshit|cock|crap|cunt|damn|dick|dipshit|dumbass|fag|faggot|fuck|fucker|fucking|goddamn|jackass|jerk|motherfucker|nigga|nigger|piss|prick|pussy|shit|shithead|slut|twat|whore|wanker)\b/gi;
 
 function cleanText(text) {
@@ -12,6 +14,18 @@ function cleanText(text) {
 }
 
 async function decryptMsg(msg, myPrivateKey, theirPublicKey) {
+  // ── use cached plaintext when available ──────────────────────
+  if (USE_PREVIEW_TEXT) {
+    return {
+      ...msg,
+      text: msg.plaintextCache
+        ? cleanText(msg.plaintextCache)
+        : msg.text
+        ? cleanText(msg.text)
+        : "✉️ [Encrypted]",
+    };
+  }
+  // ─────────────────────────────────────────────────────────────
   if (!msg.ciphertext || !msg.iv || !myPrivateKey || !theirPublicKey) {
     return { ...msg, text: cleanText(msg.text) };
   }
@@ -55,7 +69,7 @@ export const useChatStore = create((set, get) => ({
       const res = await axiosInstance.get("/messages/contacts");
       set({ allContacts: res.data });
     } catch (error) {
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Failed to load contacts");
     } finally {
       set({ isUsersLoading: false });
     }
@@ -67,7 +81,7 @@ export const useChatStore = create((set, get) => ({
       const res = await axiosInstance.get("/messages/chats");
       set({ chats: res.data });
     } catch (error) {
-      toast.error(error.response.data.message);
+      toast.error(error.response?.data?.message || "Failed to load chats");
     } finally {
       set({ isUsersLoading: false });
     }
@@ -77,12 +91,19 @@ export const useChatStore = create((set, get) => ({
     set({ isMessagesLoading: true });
     try {
       const res = await axiosInstance.get(`/messages/${userId}`);
-      const selectedUser = get().selectedUser;
-      const myPrivateKey = await encryption.loadPrivateKey();
-      const theirPublicKey = selectedUser?.publicKey;
+      const { privateKey: myPrivateKey } = useAuthStore.getState();
+
+      if (!myPrivateKey) {
+        console.warn("Private key not ready, skipping decryption");
+        set({ messages: res.data });
+        return;
+      }
 
       const decryptedMessages = await Promise.all(
-        res.data.map((msg) => decryptMsg(msg, myPrivateKey, theirPublicKey))
+        res.data.map((msg) => {
+          const theirPublicKey = msg.senderPublicKey || get().selectedUser?.publicKey;
+          return decryptMsg(msg, myPrivateKey, theirPublicKey);
+        })
       );
 
       set({ messages: decryptedMessages });
@@ -95,7 +116,22 @@ export const useChatStore = create((set, get) => ({
 
   sendMessage: async (messageData) => {
     const { selectedUser, messages } = get();
-    const { authUser } = useAuthStore.getState();
+    const { authUser, privateKey: myPrivateKey } = useAuthStore.getState();
+
+    if (!selectedUser?._id) {
+      toast.error("No user selected");
+      return;
+    }
+
+    if (messageData.text?.trim()) {
+      try {
+        await axiosInstance.post("/messages/check-toxicity", {
+          text: messageData.text.trim(),
+        });
+      } catch (error) {
+        throw error;
+      }
+    }
 
     const tempId = `temp-${Date.now()}`;
     const displayText = cleanText(messageData.text);
@@ -111,37 +147,32 @@ export const useChatStore = create((set, get) => ({
     };
     set({ messages: [...messages, optimisticMessage] });
 
-    if (!selectedUser?._id) {
-      toast.error("No user selected");
-      return;
-    }
-
     try {
       let payload = { ...messageData };
 
-      if (messageData.text && selectedUser?.publicKey) {
-        const myPrivateKey = await encryption.loadPrivateKey();
-        if (myPrivateKey) {
-          const cleaned = cleanText(messageData.text);
-          const { ciphertext, iv } = await encryption.prepareMessage(
-            cleaned,
-            myPrivateKey,
-            selectedUser.publicKey
-          );
-          payload = { ...messageData, text: undefined, ciphertext, iv };
-        }
+      if (messageData.text && selectedUser?.publicKey && myPrivateKey) {
+        const cleaned = cleanText(messageData.text);
+        const { ciphertext, iv } = await encryption.prepareMessage(
+          cleaned,
+          myPrivateKey,
+          selectedUser.publicKey
+        );
+        payload = {
+          ...messageData,
+          text: undefined,
+          ciphertext,
+          iv,
+          plaintextCache: cleaned, // ← added
+        };
       } else if (messageData.text) {
         payload = { ...messageData, text: displayText };
       }
 
-      const res = await axiosInstance.post(
-        `/messages/send/${selectedUser._id}`,
-        payload
-      );
+      const res = await axiosInstance.post(`/messages/send/${selectedUser._id}`, payload);
 
       const confirmedMessage = {
         ...res.data,
-        text: res.data.text ? cleanText(res.data.text) : displayText,
+        text: displayText ?? cleanText(res.data.text),
       };
 
       set({
@@ -152,7 +183,7 @@ export const useChatStore = create((set, get) => ({
       });
     } catch (error) {
       set({ messages: get().messages.filter((m) => m._id !== tempId) });
-      toast.error(error.response?.data?.message || "Failed to send message");
+      throw error;
     }
   },
 
@@ -167,20 +198,13 @@ export const useChatStore = create((set, get) => ({
       const isFromSelectedUser = newMessage.senderId === selectedUser._id;
       if (!isFromSelectedUser) return;
 
-      const myPrivateKey = await encryption.loadPrivateKey();
-
-      // FIX: prefer senderPublicKey attached by the server to the socket event,
-      // and fall back to selectedUser.publicKey.
-      // Previously only selectedUser.publicKey was used, which can be undefined
-      // if the chats list didn't fully populate the user object — causing the
-      // recipient to see "[encrypted message]" instead of the plaintext.
+      const { privateKey: myPrivateKey } = useAuthStore.getState();
       const theirPublicKey = newMessage.senderPublicKey || selectedUser.publicKey;
-
       const displayMessage = await decryptMsg(newMessage, myPrivateKey, theirPublicKey);
 
-      const { isSoundEnabled } = get();
       set({ messages: [...get().messages, displayMessage] });
 
+      const { isSoundEnabled } = get();
       if (isSoundEnabled) {
         const notificationSound = new Audio("/sounds/notification.mp3");
         notificationSound.currentTime = 0;

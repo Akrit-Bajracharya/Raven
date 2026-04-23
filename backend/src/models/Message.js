@@ -7,22 +7,19 @@ const messageSchema = new mongoose.Schema(
       ref: "User",
       required: true,
     },
-    // for 1-on-1
     receiverId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
     },
-    // for group messages
     groupId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Group",
     },
     text: { type: String, trim: true, maxlength: 2000 },
     image: { type: String },
-
-    // 👇 added: encrypted message fields
-    ciphertext: { type: String },  // the encrypted message body
-    iv: { type: String },          // the random IV used for AES encryption
+    ciphertext: { type: String },
+    iv: { type: String },
+    plaintextCache: { type: String }, // ← added
   },
   { timestamps: true }
 );
